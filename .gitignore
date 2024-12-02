@@ -3,8 +3,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-Data_Additionnal_Metrics.ipynb
-
 # C extensions
 *.so
 
