@@ -6,34 +6,37 @@
 # ## 1. Lines added & deleted from a given version
 # We'll begin by creating a dictionnary of versions and corresponding commits from the file `Hive_Last_Commits.csv`previously created
 
-# In[39]:
+# In[19]:
 
 
 import csv
+import git
 import glob
 import logging
 import math
 import os
 import re
 import subprocess
+import sys
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from functools import lru_cache
+from multiprocessing import Pool, cpu_count
 from pathlib import Path
 from statistics import mean
 from typing import Dict, Iterable, Tuple
-import git
 import pandas as pd
-import pytz
 
 
-# In[4]:
+# In[20]:
 
 
 project_repo = Path("/home/nicolas-richard/Desktop/.Apache_Hive_Bug_Prediction_ML_Model/")
 hive_repo = Path("/home/nicolas-richard/Desktop/.Apache_Hive/")
 
 
-# In[5]:
+# In[3]:
 
 
 last_commits = open(os.path.join(project_repo, "Hive_Last_Commits.csv"), "r")
@@ -112,7 +115,7 @@ for file in csv_files:
 # ## 2. Commits
 # In this section, we'll define functions to generate the metrics for commits affecting the file, developpers having worked on the project and their expertise. We'll begin by defining helper functions before defining metrics collection procedure and executing it all at once in order to speed up the process and minimize read-write operations.
 
-# In[44]:
+# In[22]:
 
 
 def extract_version_from_filename(file_name):
@@ -136,21 +139,6 @@ def compare_versions(version1, version2):
     v1 = list(map(int, version1.split('.')))
     v2 = list(map(int, version2.split('.')))
     return v1 <= v2
-
-def get_commits(repo, commit_range, target_file_name):
-    """Fetch commits affecting the file within a commit range."""
-    try:
-        commits = list(repo.iter_commits(commit_range, paths=target_file_name))
-        return commits
-    except Exception as e:
-        print(f"Error fetching commits for {target_file_name}: {e}")
-        return []
-
-
-# For the "developper expertise" and "time between commits", we'll define helper functions as well.
-
-# In[45]:
-
 
 def get_developer_experiences(repo):
     """Get total number of commits made by each developer in the entire project."""
@@ -179,17 +167,13 @@ def calculate_expertise_metrics(commits):
 
 def calculate_time_metrics(commits):
     """Calculate average time between commits."""
-    if len(commits) >= 3:
+    if len(commits) >= 2:
         commit_dates = sorted([commit.committed_datetime for commit in commits])
         time_diffs = [(commit_dates[i+1] - commit_dates[i]).total_seconds() for i in range(len(commit_dates)-1)]
         avg_time_between_commits = sum(time_diffs) / len(time_diffs)
     else:
-        avg_time_between_commits = None
+        avg_time_between_commits = 0
     return avg_time_between_commits
-
-
-# In[46]:
-
 
 def collect_metrics(hive_repo, version_commits, target_file_name, df_version):
     """Collect metrics for a target file."""
@@ -199,26 +183,50 @@ def collect_metrics(hive_repo, version_commits, target_file_name, df_version):
 
     relevant_versions = [vc for vc in version_commits if compare_versions(vc[0], df_version)]
 
-    for i, (version, commit_hash) in enumerate(relevant_versions):
-        commits_affecting_file = get_commits(repo, f"{commit_hash}..HEAD", target_file_name)
+    print(f"Fetching all commits affecting {target_file_name}...")
+    all_commits_affecting_file = list(repo.iter_commits(paths=target_file_name.strip()))
 
+    commit_to_version = {}
+    for i, (version, commit_hash) in enumerate(relevant_versions):
+        if i < len(relevant_versions) - 1:
+            next_commit_hash = relevant_versions[i + 1][1]
+        else:
+            next_commit_hash = 'HEAD'
+
+        commit_range = f"{commit_hash}..{next_commit_hash}"
+        commits_in_range = list(repo.iter_commits(commit_range))
+
+        for commit in commits_in_range:
+            commit_to_version[commit.hexsha] = version
+
+    version_to_commits = defaultdict(list)
+    for commit in all_commits_affecting_file:
+        commit_version = commit_to_version.get(commit.hexsha)
+        if commit_version:
+            version_to_commits[commit_version].append(commit)
+
+    all_previous_commits = []
+
+    for version in relevant_versions:
+        version = version[0]
+        commits_affecting_file = version_to_commits.get(version, [])
+
+        # Identify bug fix commits
         bug_fix_keywords = ["fix", "bug", "issue", "HIVE-"]
         bug_fix_commits = [
             c for c in commits_affecting_file if any(keyword in c.message.lower() for keyword in bug_fix_keywords)
         ]
 
-        all_previous_commits = []
-        if i > 0:
-            previous_commit_hash = relevant_versions[i - 1][1]
-            previous_commits = get_commits(repo, f"{previous_commit_hash}..{commit_hash}", target_file_name)
-            all_previous_commits.extend(previous_commits)
-            all_previous_commits = list(set(all_previous_commits)) 
-
+        # Calculate expertise metrics for current version
         num_devs_in_version, avg_expertise_in_version, min_expertise_in_version = calculate_expertise_metrics(commits_affecting_file)
 
+        # Calculate expertise metrics for previous versions
         num_devs_in_prev_versions, avg_expertise_in_prev_versions, min_expertise_in_prev_versions = calculate_expertise_metrics(all_previous_commits)
 
+        # Calculate time metrics for current version
         avg_time_between_commits_in_version = calculate_time_metrics(commits_affecting_file)
+
+        # Calculate time metrics for previous versions
         avg_time_between_commits_in_prev_versions = calculate_time_metrics(all_previous_commits)
 
         metrics[version] = {
@@ -234,6 +242,14 @@ def collect_metrics(hive_repo, version_commits, target_file_name, df_version):
             "avg_time_between_commits_in_version": avg_time_between_commits_in_version,
             "avg_time_between_commits_in_previous_versions": avg_time_between_commits_in_prev_versions
         }
+
+        all_previous_commits.extend(commits_affecting_file)
+
+        all_previous_commits = list(set(all_previous_commits))
+
+        if version == df_version:
+            break
+
     return metrics
 
 def display_metrics(metrics):
@@ -253,19 +269,28 @@ def display_metrics(metrics):
         print(f"  - Average Time Between Commits in previous versions: {data['avg_time_between_commits_in_previous_versions']}")
         print()
 
-
-# In[47]:
-
-
 if __name__ == "__main__":
+
     version_commits_file = "Hive_Last_Commits.csv"
+
     version_commits = load_version_commits(version_commits_file)
+    files_dir = os.path.join(project_repo, "UND_hive_additional_metrics")
     files = sorted([
-        os.path.join(project_repo, "UND_hive_additional_metrics", f) 
-        for f in os.listdir(os.path.join(project_repo, "UND_hive_additional_metrics")) 
+        os.path.join(files_dir, f) 
+        for f in os.listdir(files_dir) 
     ])
 
     repo = git.Repo(hive_repo)
+
+    try:
+        repo.git.fetch('origin')
+        repo.git.reset('--hard', 'origin/master') 
+        repo.git.checkout('master')
+        repo.git.pull()
+        print("Repository updated to the latest commit.")
+    except Exception as e:
+        print(f"Error updating the repository: {e}")
+
     developer_experiences = get_developer_experiences(repo)
 
     for file in files:
@@ -282,8 +307,8 @@ if __name__ == "__main__":
         df["AvgExpertiseInPreviousVersions"] = 0.0
         df["MinExpertiseInVersion"] = 0
         df["MinExpertiseInPreviousVersions"] = 0
-        df["AvgTimeBetweenCommitsInVersion"] = None
-        df["AvgTimeBetweenCommitsInPreviousVersions"] = None
+        df["AvgTimeBetweenCommitsInVersion"] = 0
+        df["AvgTimeBetweenCommitsInPreviousVersions"] = 0
 
         for index, row in df.iterrows():
             target_file_name = row["FileName"]
