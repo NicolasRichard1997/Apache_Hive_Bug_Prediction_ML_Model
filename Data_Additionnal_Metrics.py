@@ -6,7 +6,7 @@
 # ## 1. Lines added & deleted from a given version
 # We'll begin by creating a dictionnary of versions and corresponding commits from the file `Hive_Last_Commits.csv`previously created
 
-# In[8]:
+# In[ ]:
 
 
 import csv
@@ -29,14 +29,14 @@ from typing import Dict, Iterable, Tuple
 import pandas as pd
 
 
-# In[9]:
+# In[ ]:
 
 
 project_repo = Path("/home/nicolas/Desktop/Apache_Hive_Bug_Prediction_ML_Model")
 hive_repo = Path("/home/nicolas/Desktop/hive")
 
 
-# In[10]:
+# In[ ]:
 
 
 last_commits = open(os.path.join(project_repo, "/home/nicolas/Desktop/Apache_Hive_Bug_Prediction_ML_Model/Hive_Last_Commits.csv"), "r")
@@ -215,7 +215,7 @@ for file in csv_files:
 
 # We'll begin by defining helper functions before defining metrics collection procedure and executing it all at once in order to speed up the process and minimize read-write operations.
 
-# In[19]:
+# In[ ]:
 
 
 old_base_path = "/home/nicolas-richard/Desktop/.Apache_Hive"
@@ -228,7 +228,7 @@ def adjust_path(file_path):
     return file_path
 
 
-# In[20]:
+# In[ ]:
 
 
 def extract_version_from_filename(file_name):
@@ -256,7 +256,7 @@ def compare_versions(version1, version2):
 
 # Next, we'll have to define metrics for developper experience. to simplify this, we can define this metric as total experience for the project. Hence, we can fetch all developpers having worked on the project and assign their experience as their numbers of commits on the project. While this way of defining experience is more than imperfect, the output gives us a solid base for the trainning to come
 
-# In[21]:
+# In[ ]:
 
 
 global developer_experiences 
@@ -299,7 +299,7 @@ def calculate_time_metrics(commits):
 
 # For the comments-related metrics, we can define the following pattern to identify whether a change to a file is a comment  
 
-# In[22]:
+# In[ ]:
 
 
 def is_comment_change(diff_text):
@@ -324,7 +324,7 @@ def is_comment_change(diff_text):
 
 # As mentionned before, this task will be computationnaly very expensive. Hence, in order to minimize the quantity of git commands and read/write operations, we'll need to gather all of our metrics in batch.
 
-# In[23]:
+# In[ ]:
 
 
 def collect_metrics(hive_repo, version_commits, target_file_name, df_version):
@@ -335,74 +335,83 @@ def collect_metrics(hive_repo, version_commits, target_file_name, df_version):
 
     relevant_versions = [vc for vc in version_commits if compare_versions(vc[0], df_version)]
 
-   all_previous_commits = []
+    print(f"Fetching all commits affecting {target_file_name}...")
+    all_commits_affecting_file = list(repo.iter_commits(paths=target_file_name.strip()))
 
-# Iterating over versions
-for version in relevant_versions:
-    version = version[0]  # Get the version (e.g., '1.0.0')
-    commits_affecting_file = version_to_commits.get(version, [])
-    
-    # Process commits in the current version
-    for commit in commits_affecting_file:
-        # Track commits only if they are not already in the list of previous commits
-        if commit not in all_previous_commits:
-            all_previous_commits.append(commit)
-
-    # Identify bug fix commits
-    bug_fix_keywords = ["fix", "bug", "issue", "HIVE-"]
-    bug_fix_commits = [
-        c for c in commits_affecting_file if any(keyword in c.message.lower() for keyword in bug_fix_keywords)
-    ]
-
-    commits_with_comment_changes = []
-    commits_without_comment_changes = []
-    for commit in commits_affecting_file:
-        diffs = commit.diff(commit.parents[0] if commit.parents else None, paths=target_file_name.strip(), create_patch=True)
-        comment_change = False
-        for diff in diffs:
-            diff_text = diff.diff.decode('utf-8', errors='ignore')
-            if is_comment_change(diff_text):
-                comment_change = True
-                break
-        if comment_change:
-            commits_with_comment_changes.append(commit)
+    commit_to_version = {}
+    for i, (version, commit_hash) in enumerate(relevant_versions):
+        if i < len(relevant_versions) - 1:
+            next_commit_hash = relevant_versions[i + 1][1]
         else:
-            commits_without_comment_changes.append(commit)
+            next_commit_hash = 'HEAD'
 
-    # Calculate expertise and time metrics for the current version
-    num_devs_in_version, avg_expertise_in_version, min_expertise_in_version = calculate_expertise_metrics(commits_affecting_file)
+        commit_range = f"{commit_hash}..{next_commit_hash}"
+        commits_in_range = list(repo.iter_commits(commit_range))
 
-    # Calculate expertise and time metrics for previous versions
-    num_devs_in_prev_versions, avg_expertise_in_prev_versions, min_expertise_in_prev_versions = calculate_expertise_metrics(all_previous_commits)
+        for commit in commits_in_range:
+            commit_to_version[commit.hexsha] = version
 
-    avg_time_between_commits_in_version = calculate_time_metrics(commits_affecting_file)
-    avg_time_between_commits_in_prev_versions = calculate_time_metrics(all_previous_commits)
+    version_to_commits = defaultdict(list)
+    for commit in all_commits_affecting_file:
+        commit_version = commit_to_version.get(commit.hexsha)
+        if commit_version:
+            version_to_commits[commit_version].append(commit)
 
-    # Store the calculated metrics for the current version
-    metrics[version] = {
-        "num_commits_in_version": len(commits_affecting_file),
-        "num_bug_fix_commits": len(bug_fix_commits),
-        "num_commits_in_previous_versions": len(all_previous_commits),
-        "num_developers_in_version": num_devs_in_version,
-        "num_developers_in_previous_versions": num_devs_in_prev_versions,
-        "avg_expertise_in_version": avg_expertise_in_version,
-        "avg_expertise_in_previous_versions": avg_expertise_in_prev_versions,
-        "min_expertise_in_version": min_expertise_in_version,
-        "min_expertise_in_previous_versions": min_expertise_in_prev_versions,
-        "avg_time_between_commits_in_version": avg_time_between_commits_in_version,
-        "avg_time_between_commits_in_previous_versions": avg_time_between_commits_in_prev_versions,
-        "num_commits_with_comment_changes": len(commits_with_comment_changes),
-        "num_commits_without_comment_changes": len(commits_without_comment_changes),
-    }
+    all_previous_commits = []
 
-    # Add the current version's commits to the previous commits tracker
-    all_previous_commits.extend(commits_affecting_file)
+    for version in relevant_versions:
+        version = version[0]
+        commits_affecting_file = version_to_commits.get(version, [])
 
-    # Ensure no duplicates are introduced, but avoid using a set
-    all_previous_commits = list(dict.fromkeys(all_previous_commits))
+        bug_fix_keywords = ["fix", "bug", "issue", "HIVE-"]
+        bug_fix_commits = [
+            c for c in commits_affecting_file if any(keyword in c.message.lower() for keyword in bug_fix_keywords)
+        ]
 
-    if version == df_version:
-        break
+        commits_with_comment_changes = []
+        commits_without_comment_changes = []
+        for commit in commits_affecting_file:
+            diffs = commit.diff(commit.parents[0] if commit.parents else None, paths=target_file_name.strip(), create_patch=True)
+            comment_change = False
+            for diff in diffs:
+                diff_text = diff.diff.decode('utf-8', errors='ignore')
+                if is_comment_change(diff_text):
+                    comment_change = True
+                    break
+            if comment_change:
+                commits_with_comment_changes.append(commit)
+            else:
+                commits_without_comment_changes.append(commit)
+
+        num_devs_in_version, avg_expertise_in_version, min_expertise_in_version = calculate_expertise_metrics(commits_affecting_file)
+
+        num_devs_in_prev_versions, avg_expertise_in_prev_versions, min_expertise_in_prev_versions = calculate_expertise_metrics(all_previous_commits)
+
+        avg_time_between_commits_in_version = calculate_time_metrics(commits_affecting_file)
+        avg_time_between_commits_in_prev_versions = calculate_time_metrics(all_previous_commits)
+
+        metrics[version] = {
+            "num_commits_in_version": len(commits_affecting_file),
+            "num_bug_fix_commits": len(bug_fix_commits),
+            "num_commits_in_previous_versions": len(all_previous_commits),
+            "num_developers_in_version": num_devs_in_version,
+            "num_developers_in_previous_versions": num_devs_in_prev_versions,
+            "avg_expertise_in_version": avg_expertise_in_version,
+            "avg_expertise_in_previous_versions": avg_expertise_in_prev_versions,
+            "min_expertise_in_version": min_expertise_in_version,
+            "min_expertise_in_previous_versions": min_expertise_in_prev_versions,
+            "avg_time_between_commits_in_version": avg_time_between_commits_in_version,
+            "avg_time_between_commits_in_previous_versions": avg_time_between_commits_in_prev_versions,
+            "num_commits_with_comment_changes": len(commits_with_comment_changes),
+            "num_commits_without_comment_changes": len(commits_without_comment_changes),
+        }
+        all_previous_commits.extend(commits_affecting_file)
+
+        all_previous_commits = list({commit.hexsha: commit for commit in all_previous_commits}.values())
+
+        if version == df_version:
+            break
+
     return metrics
 
 def display_metrics(metrics):
@@ -427,7 +436,7 @@ def display_metrics(metrics):
 
 # Finally, we'll define an overarching loop to gather all these metrics: 
 
-# In[24]:
+# In[ ]:
 
 
 if __name__ == "__main__":
