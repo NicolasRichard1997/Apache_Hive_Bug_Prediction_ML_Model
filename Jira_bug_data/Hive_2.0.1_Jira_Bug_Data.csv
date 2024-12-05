@@ -8,7 +8,7 @@ Bug,HIVE-15090,13016129,Temporary DB failure can stop ExpiredTokenRemover thread
 Bug,HIVE-14903,13010125,from_utc_time function issue for CET daylight savings,,ericlin,Minor,Resolved,Fixed,06/Oct/16 10:24,12/Oct/17 05:36,
 Bug,HIVE-14829,13007177,metastore.sh fails due to classpath conflict with hive-service-rpc,spena,spena,Major,Resolved,Invalid,23/Sep/16 15:18,23/Sep/16 18:54,
 Bug,HIVE-14820,13006940,RPC server for spark inside HS2 is not getting server address properly,aihuaxu,aihuaxu,Major,Resolved,Fixed,22/Sep/16 19:45,21/Jul/17 18:12,
-Bug,HIVE-14805,13006564,Subquery inside a view will have the object in the subquery as the direct input ,aihuaxu,aihuaxu,Major,Closed,Fixed,21/Sep/16 16:39,26/Oct/18 16:55,
+Bug,HIVE-14805,13006564,Subquery inside a view will have the object in the subquery as the direct input,aihuaxu,aihuaxu,Major,Closed,Fixed,21/Sep/16 16:39,26/Oct/18 16:55,
 Bug,HIVE-14566,12998083,LLAP IO reads timestamp wrongly,prasanth_j,prasanth_j,Critical,Closed,Fixed,18/Aug/16 01:35,08/Dec/16 14:10,
 Bug,HIVE-14433,12995032,refactor LLAP plan cache avoidance and fix issue in merge processor,sershe,sershe,Major,Closed,Fixed,04/Aug/16 21:02,08/Dec/16 14:16,
 Bug,HIVE-14322,12992074,Postgres db issues after Datanucleus 4.x upgrade,sershe,thejas,Major,Closed,Fixed,24/Jul/16 06:42,01/Jun/17 04:40,
