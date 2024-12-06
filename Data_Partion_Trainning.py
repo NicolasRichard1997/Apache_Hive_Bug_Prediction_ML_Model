@@ -8,7 +8,7 @@
 # ### 1.1. Feature Selection
 # 
 
-# In[ ]:
+# In[2]:
 
 
 get_ipython().run_line_magic('matplotlib', 'inline')
@@ -46,13 +46,13 @@ from sklearn.utils.class_weight import compute_class_weight
 
 # In order to simplify repertory changes, we'll initialize two variables, containning the paths of this current repository and the path of your clone of the Apache Hive repertory.
 
-# In[2]:
+# In[3]:
 
 
 project_repo = path("/home/nicolas-richard/Desktop/.Apache_Hive_Bug_Prediction_ML_Model")
 
 
-# In[3]:
+# In[4]:
 
 
 def extract_version(filename):
@@ -66,7 +66,7 @@ def extract_version(filename):
     return version_part
 
 
-# In[4]:
+# In[5]:
 
 
 input_files = glob.glob(os.path.join(project_repo, 'UND_hive_updated_data', '*.csv'))
@@ -86,7 +86,7 @@ count = concatenated_df['Version'].nunique()
 
 # Below, we'll just reorder our dataframe by column
 
-# In[5]:
+# In[6]:
 
 
 concatenated_df.drop_duplicates
@@ -109,7 +109,7 @@ print(y.value_counts())
 
 # ### 1.2. Data Exploration
 
-# In[6]:
+# In[1]:
 
 
 profile = ProfileReport(data, 
